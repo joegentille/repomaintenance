@@ -1,0 +1,19 @@
+{
+  "include": [
+    {
+      "source_image": "ubuntu:latest",
+      "repository_name": "ubuntu",
+      "tag": "latest"
+    },
+    {
+      "source_image": "nginx:latest",
+      "repository_name": "nginx",
+      "tag": "latest"
+    },
+    {
+      "source_image": "python:3.11-slim",
+      "repository_name": "python",
+      "tag": "3.11"
+    }
+  ]
+}

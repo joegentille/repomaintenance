@@ -1,0 +1,117 @@
+name: Push Docker Image from URL to GHCR
+
+on:
+  schedule:
+    # Ejecutar diariamente a las 2:00 AM UTC
+    - cron: '0 2 * * *'
+  
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - '.github/workflows/push-to-ghcr-auto.yml'
+      - 'images-config.json'
+  
+  workflow_dispatch:
+    inputs:
+      config_file:
+        description: 'Configuration file path (default: images-config.json)'
+        required: false
+        type: string
+        default: 'images-config.json'
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  parse-config:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate matrix from config
+        id: generate-matrix
+        run: |
+          CONFIG_FILE="${{ github.event.inputs.config_file || 'images-config.json' }}"
+          if [ -f "$CONFIG_FILE" ]; then
+            MATRIX=$(jq -c . "$CONFIG_FILE")
+            echo "matrix=${MATRIX}" >> $GITHUB_OUTPUT
+          else
+            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+            echo "::warning::Config file not found: $CONFIG_FILE"
+          fi
+
+  push-to-ghcr:
+    needs: parse-config
+    if: needs.parse-config.outputs.matrix != '{"include":[]}'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.parse-config.outputs.matrix) }}
+      fail-fast: false
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull source image
+        run: |
+          echo "📥 Pulling image: ${{ matrix.source_image }}"
+          docker pull ${{ matrix.source_image }} --quiet
+          echo "✅ Image pulled successfully"
+
+      - name: Tag image for GHCR
+        run: |
+          TARGET_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.repository_name }}"
+          TAG="${{ matrix.tag || 'latest' }}"
+          
+          docker tag ${{ matrix.source_image }} ${TARGET_IMAGE}:${TAG}
+          docker tag ${{ matrix.source_image }} ${TARGET_IMAGE}:latest
+          
+          echo "TARGET_IMAGE=${TARGET_IMAGE}" >> $GITHUB_ENV
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+
+      - name: Push to GHCR
+        run: |
+          echo "🚀 Pushing image: ${{ env.TARGET_IMAGE }}:${{ env.TAG }}"
+          docker push ${{ env.TARGET_IMAGE }}:${{ env.TAG }}
+          docker push ${{ env.TARGET_IMAGE }}:latest
+          echo "✅ Image pushed successfully"
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rmi ${{ matrix.source_image }} \
+                     ${{ env.TARGET_IMAGE }}:${{ env.TAG }} \
+                     ${{ env.TARGET_IMAGE }}:latest || true
+
+      - name: Create job summary
+        if: success()
+        run: |
+          echo "# ✅ Push Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Propiedad | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Imagen origen | \`${{ matrix.source_image }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Imagen destino | \`${{ env.TARGET_IMAGE }}:${{ env.TAG }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ env.TAG }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Comando para descargar:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.TARGET_IMAGE }}:${{ env.TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
