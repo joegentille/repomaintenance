@@ -1,7 +1,7 @@
 {
   "include": [
     {
-      "source_image": "mongo:8.2.6-rc0-windowsservercore",
+      "source_image": "mongo:8.2.6-rc0",
       "repository_name": "mongo",
       "tag": "v1"
     },
