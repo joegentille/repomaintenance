@@ -1,9 +1,9 @@
 {
   "include": [
     {
-      "source_image": "ubuntu:latest",
-      "repository_name": "ubuntu",
-      "tag": "latest"
+      "source_image": "mongo:8.2.6-rc0-windowsservercore-ltsc2025",
+      "repository_name": "mongo",
+      "tag": "v1"
     },
     {
       "source_image": "nginx:latest",
